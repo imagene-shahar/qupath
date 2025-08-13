@@ -75,7 +75,7 @@ public class IsyntaxLoader {
     private static File extractPackagedNative() throws IOException {
         List<String> platforms = detectPlatformClassifiers();
         for (String platform : platforms) {
-            String libName = platform.startsWith("windows") ? "isyntax.dll" : platform.startsWith("mac") ? "libisyntax.dylib" : "libisyntax.so";
+            String libName = platform.startsWith("windows") ? "isyntax.dll" : platform.startsWith("mac") || platform.startsWith("darwin") ? "libisyntax.dylib" : "libisyntax.so";
             String res = "/natives/" + platform + "/" + libName;
             try (InputStream in = IsyntaxLoader.class.getResourceAsStream(res)) {
                 if (in == null) continue;
@@ -108,6 +108,13 @@ public class IsyntaxLoader {
         variants.add(base.replace("linux-", "linux"));
         variants.add(base.replace("windows-", "windows"));
         variants.add(base.replace("macos-", "macos"));
+        // Add alternative classifier variants used by build tooling
+        if (base.startsWith("macos-")) {
+            variants.add(base.replace("macos-", "darwin-"));
+        }
+        if (base.startsWith("windows-")) {
+            variants.add(base.replace("windows-", "win32-"));
+        }
         return new ArrayList<>(variants);
     }
 
