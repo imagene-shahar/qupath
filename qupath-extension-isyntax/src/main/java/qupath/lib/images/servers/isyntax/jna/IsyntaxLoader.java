@@ -11,7 +11,6 @@ package qupath.lib.images.servers.isyntax.jna;
 
 import com.sun.jna.Native;
 import com.sun.jna.ptr.PointerByReference;
-import com.sun.jna.Pointer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -75,16 +74,29 @@ public class IsyntaxLoader {
     private static File extractPackagedNative() throws IOException {
         List<String> platforms = detectPlatformClassifiers();
         for (String platform : platforms) {
-            String libName = platform.startsWith("windows") ? "isyntax.dll" : platform.startsWith("mac") || platform.startsWith("darwin") ? "libisyntax.dylib" : "libisyntax.so";
-            String res = "/natives/" + platform + "/" + libName;
-            try (InputStream in = IsyntaxLoader.class.getResourceAsStream(res)) {
-                if (in == null) continue;
-                File tmp = Files.createTempFile("libisyntax", libName).toFile();
-                tmp.deleteOnExit();
-                try (OutputStream out = new FileOutputStream(tmp)) {
-                    in.transferTo(out);
+            List<String> libNames = new ArrayList<>();
+            if (platform.startsWith("windows")) {
+                libNames.add("isyntax.dll");
+                libNames.add("libisyntax.dll"); // some toolchains (e.g. MinGW) add 'lib' prefix on Windows
+            } else if (platform.startsWith("mac") || platform.startsWith("darwin")) {
+                libNames.add("libisyntax.dylib");
+                libNames.add("isyntax.dylib");
+            } else {
+                libNames.add("libisyntax.so");
+                libNames.add("isyntax.so");
+            }
+
+            for (String libName : libNames) {
+                String res = "/natives/" + platform + "/" + libName;
+                try (InputStream in = IsyntaxLoader.class.getResourceAsStream(res)) {
+                    if (in == null) continue;
+                    File tmp = Files.createTempFile("libisyntax", libName).toFile();
+                    tmp.deleteOnExit();
+                    try (OutputStream out = new FileOutputStream(tmp)) {
+                        in.transferTo(out);
+                    }
+                    return tmp;
                 }
-                return tmp;
             }
         }
         return null;

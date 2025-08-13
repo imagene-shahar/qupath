@@ -128,7 +128,12 @@ fun Exec.configureCMakeCommandsFor(os: String) {
             )
         }
         else -> { // windows
-            commandLine("cmd", "/c", "cmake -S $src -B $build -DBUILD_TESTING=OFF -DBUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release && cmake --build $build --target isyntax --config Release")
+            commandLine(
+                "cmd", "/c",
+                // Ensure 64-bit build and statically link MSVC runtime to avoid missing dependency issues on target machines
+                "cmake -S $src -B $build -DBUILD_TESTING=OFF -DBUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release -A x64 -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded && " +
+                    "cmake --build $build --target isyntax --config Release"
+            )
         }
     }
 }
@@ -147,7 +152,13 @@ val packageNative by tasks.registering(Copy::class) {
     dependsOn(buildLibisyntax)
     from(
         fileTree(nativeBuildDir) {
-            include("**/libisyntax.so", "**/libisyntax.dylib", "**/isyntax.dll")
+            include("**/libisyntax.so", "**/libisyntax.dylib", "**/isyntax.dll", "**/libisyntax.dll")
+        }
+    )
+    // Also pick up any manually-built natives inside third_party/libisyntax (e.g. built outside Gradle)
+    from(
+        fileTree(libisyntaxSrcDir) {
+            include("**/libisyntax.so", "**/libisyntax.dylib", "**/isyntax.dll", "**/libisyntax.dll")
         }
     )
     into("build/packaged-natives/natives/${nativesClassifier}")
