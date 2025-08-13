@@ -60,14 +60,14 @@ val prepareLibisyntaxSources by tasks.registering {
         try {
             project.exec {
                 workingDir(project.rootDir)
-                commandLine("git", "clone", "--depth", "1", "https://github.com/amspath/libisyntax", libisyntaxSrcDir.absolutePath)
+                commandLine("git", "clone", "--depth", "1", "https://github.com/imagene-shahar/libisyntax", libisyntaxSrcDir.absolutePath)
             }
         } catch (e: Exception) {
             logger.warn("git clone libisyntax failed, falling back to zip download: ${e.message}")
             val tmpZip = layout.buildDirectory.file("libisyntax.zip").get().asFile
             fun tryDownload(branch: String): Boolean {
                 return try {
-                    val url = URL("https://github.com/amspath/libisyntax/archive/refs/heads/${branch}.zip")
+                    val url = URL("https://github.com/imagene-shahar/libisyntax/archive/refs/heads/${branch}.zip")
                     url.openStream().use { input ->
                         Files.copy(input, tmpZip.toPath(), StandardCopyOption.REPLACE_EXISTING)
                     }

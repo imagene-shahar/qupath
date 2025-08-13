@@ -12,21 +12,32 @@ package qupath.lib.images.servers.isyntax.jna;
 import com.sun.jna.Pointer;
 import com.sun.jna.ptr.PointerByReference;
 
+
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Arrays;
+ 
 
 public class Isyntax implements Closeable {
 
     public static final int LIBISYNTAX_PIXEL_FORMAT_RGBA = 0x101; // from enum in header
     public static final int LIBISYNTAX_PIXEL_FORMAT_BGRA = 0x102;
 
+    
+
     private final IsyntaxJNA jna;
     private Pointer isyntax;
     private Pointer cache;
+
+    /**
+     * Guard against concurrent calls into the native library for a single iSyntax handle.
+     * The underlying decoder/cache is not guaranteed to be thread-safe.
+     */
+    private final Object readLock = new Object();
 
     private final Pointer wsiImage;
     private final int levelCount;
@@ -71,34 +82,159 @@ public class Isyntax implements Closeable {
     public int getTileHeight() { return jna.libisyntax_get_tile_height(isyntax); }
 
     public void readRegionBGRA(int[] dest, long x, long y, int level, int w, int h) throws IOException {
-        int err = jna.libisyntax_read_region(isyntax, cache, level, x, y, w, h, dest, LIBISYNTAX_PIXEL_FORMAT_BGRA);
+        int err;
+        // Clamp at the call site as well to avoid native OOB when asserts are compiled out
+        ClampedRegion cr = clampRegion(x, y, w, h, level);
+        if (cr.width == 0 || cr.height == 0) {
+            Arrays.fill(dest, 0);
+            return;
+        }
+        
+        if (cr.isExactRequest(x, y, w, h)) {
+            synchronized (readLock) {
+                err = jna.libisyntax_read_region(isyntax, cache, level, x, y, w, h, dest, LIBISYNTAX_PIXEL_FORMAT_BGRA);
+            }
+            if (err != 0) throw new IOException("libisyntax_read_region failed: " + err);
+            return;
+        }
+        // Partially OOB: read subregion and blit into dest
+        int[] tmp = new int[cr.width * cr.height];
+        synchronized (readLock) {
+            err = jna.libisyntax_read_region(isyntax, cache, level, cr.srcX, cr.srcY, cr.width, cr.height, tmp, LIBISYNTAX_PIXEL_FORMAT_BGRA);
+        }
         if (err != 0) throw new IOException("libisyntax_read_region failed: " + err);
+        Arrays.fill(dest, 0);
+        for (int row = 0; row < cr.height; row++) {
+            int destRowStart = (cr.destOffsetY + row) * w + cr.destOffsetX;
+            int srcRowStart = row * cr.width;
+            System.arraycopy(tmp, srcRowStart, dest, destRowStart, cr.width);
+        }
     }
 
     public void readRegionIntoARGB(int[] dest, long x, long y, int level, int w, int h) throws IOException {
-        readRegionBGRA(dest, x, y, level, w, h);
-        int n = w * h;
-        for (int i = 0; i < n; i++) {
-            int c = dest[i];
-            int b = (c) & 0xFF;
-            int g = (c >>> 8) & 0xFF;
-            int r = (c >>> 16) & 0xFF;
-            int a = (c >>> 24) & 0xFF;
-            dest[i] = (a << 24) | (r << 16) | (g << 8) | b;
+        // Clamp to level bounds; fill out-of-bounds with zeros
+        ClampedRegion cr = clampRegion(x, y, w, h, level);
+        if (cr.width == 0 || cr.height == 0) {
+            Arrays.fill(dest, 0);
+            return;
+        }
+
+        if (cr.isExactRequest(x, y, w, h)) {
+            // Fast path: entirely within bounds, no offsets
+            readRegionBGRA(dest, x, y, level, w, h);
+            int n = w * h;
+            for (int i = 0; i < n; i++) {
+                int c = dest[i];
+                int b = (c) & 0xFF;
+                int g = (c >>> 8) & 0xFF;
+                int r = (c >>> 16) & 0xFF;
+                int a = (c >>> 24) & 0xFF;
+                dest[i] = (a << 24) | (r << 16) | (g << 8) | b;
+            }
+            return;
+        }
+
+        
+
+        Arrays.fill(dest, 0);
+        int[] tmp = new int[cr.width * cr.height];
+        readRegionBGRA(tmp, cr.srcX, cr.srcY, level, cr.width, cr.height);
+        // Copy-convert BGRA -> ARGB into the destination with offsets
+        for (int row = 0; row < cr.height; row++) {
+            int destRowStart = (cr.destOffsetY + row) * w + cr.destOffsetX;
+            int srcRowStart = row * cr.width;
+            for (int col = 0; col < cr.width; col++) {
+                int c = tmp[srcRowStart + col];
+                int b = c & 0xFF;
+                int g = (c >>> 8) & 0xFF;
+                int r = (c >>> 16) & 0xFF;
+                int a = (c >>> 24) & 0xFF;
+                dest[destRowStart + col] = (a << 24) | (r << 16) | (g << 8) | b;
+            }
         }
     }
 
     public void readRegionIntoRGB(int[] dest, long x, long y, int level, int w, int h) throws IOException {
-        int n = w * h;
-        int[] tmp = new int[n];
-        int err = jna.libisyntax_read_region(isyntax, cache, level, x, y, w, h, tmp, LIBISYNTAX_PIXEL_FORMAT_BGRA);
-        if (err != 0) throw new IOException("libisyntax_read_region failed: " + err);
-        for (int i = 0; i < n; i++) {
-            int c = tmp[i];
-            int b = c & 0xFF;
-            int g = (c >>> 8) & 0xFF;
-            int r = (c >>> 16) & 0xFF;
-            dest[i] = (r << 16) | (g << 8) | b;
+        // Clamp to level bounds; fill out-of-bounds with zeros
+        ClampedRegion cr = clampRegion(x, y, w, h, level);
+        if (cr.width == 0 || cr.height == 0) {
+            Arrays.fill(dest, 0);
+            return;
+        }
+
+        if (cr.isExactRequest(x, y, w, h)) {
+            int n = w * h;
+            int[] tmp = new int[n];
+            readRegionBGRA(tmp, x, y, level, w, h);
+            for (int i = 0; i < n; i++) {
+                int c = tmp[i];
+                int b = c & 0xFF;
+                int g = (c >>> 8) & 0xFF;
+                int r = (c >>> 16) & 0xFF;
+                dest[i] = (r << 16) | (g << 8) | b;
+            }
+            return;
+        }
+
+        
+
+        Arrays.fill(dest, 0);
+        int[] tmp = new int[cr.width * cr.height];
+        readRegionBGRA(tmp, cr.srcX, cr.srcY, level, cr.width, cr.height);
+        // Copy-convert BGRA -> RGB into the destination with offsets
+        for (int row = 0; row < cr.height; row++) {
+            int destRowStart = (cr.destOffsetY + row) * w + cr.destOffsetX;
+            int srcRowStart = row * cr.width;
+            for (int col = 0; col < cr.width; col++) {
+                int c = tmp[srcRowStart + col];
+                int b = c & 0xFF;
+                int g = (c >>> 8) & 0xFF;
+                int r = (c >>> 16) & 0xFF;
+                dest[destRowStart + col] = (r << 16) | (g << 8) | b;
+            }
+        }
+    }
+
+    private ClampedRegion clampRegion(long x, long y, int w, int h, int level) {
+        int levelW = getLevelWidth(level);
+        int levelH = getLevelHeight(level);
+
+        // Source coordinates clamped to level bounds
+        int srcX0 = (int)Math.max(0, Math.min(x, (long)levelW));
+        int srcY0 = (int)Math.max(0, Math.min(y, (long)levelH));
+        long reqX1 = x + (long)w;
+        long reqY1 = y + (long)h;
+        int srcX1 = (int)Math.max(0, Math.min(reqX1, (long)levelW));
+        int srcY1 = (int)Math.max(0, Math.min(reqY1, (long)levelH));
+
+        int clampedW = Math.max(0, srcX1 - srcX0);
+        int clampedH = Math.max(0, srcY1 - srcY0);
+
+        // Destination offsets if the requested region started outside bounds
+        int destOffsetX = (int)(srcX0 - x);
+        int destOffsetY = (int)(srcY0 - y);
+        return new ClampedRegion(srcX0, srcY0, clampedW, clampedH, destOffsetX, destOffsetY);
+    }
+
+    private static final class ClampedRegion {
+        final int srcX;
+        final int srcY;
+        final int width;
+        final int height;
+        final int destOffsetX;
+        final int destOffsetY;
+
+        ClampedRegion(int srcX, int srcY, int width, int height, int destOffsetX, int destOffsetY) {
+            this.srcX = srcX;
+            this.srcY = srcY;
+            this.width = width;
+            this.height = height;
+            this.destOffsetX = destOffsetX;
+            this.destOffsetY = destOffsetY;
+        }
+
+        boolean isExactRequest(long x, long y, int w, int h) {
+            return destOffsetX == 0 && destOffsetY == 0 && srcX == (int)x && srcY == (int)y && width == w && height == h;
         }
     }
 
@@ -120,10 +256,12 @@ public class Isyntax implements Closeable {
 
     @Override
     public void close() {
-        try {
-            if (cache != null) { jna.libisyntax_cache_destroy(cache); cache = null; }
-        } finally {
-            if (isyntax != null) { jna.libisyntax_close(isyntax); isyntax = null; }
+        synchronized (readLock) {
+            try {
+                if (cache != null) { jna.libisyntax_cache_destroy(cache); cache = null; }
+            } finally {
+                if (isyntax != null) { jna.libisyntax_close(isyntax); isyntax = null; }
+            }
         }
     }
 }

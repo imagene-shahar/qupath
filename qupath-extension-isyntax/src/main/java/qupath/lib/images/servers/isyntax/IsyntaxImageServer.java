@@ -14,7 +14,6 @@ import qupath.lib.images.servers.ImageServerBuilder.DefaultImageServerBuilder;
 import qupath.lib.images.servers.ImageServerBuilder.ServerBuilder;
 import qupath.lib.images.servers.isyntax.jna.Isyntax;
 import qupath.lib.images.servers.isyntax.jna.IsyntaxLoader;
-import qupath.lib.regions.RegionRequest;
 
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
@@ -103,8 +102,9 @@ public class IsyntaxImageServer extends AbstractTileableImageServer {
 
     @Override
     public BufferedImage readTile(TileRequest tileRequest) throws IOException {
-        int tileX = tileRequest.getImageX();
-        int tileY = tileRequest.getImageY();
+        // Use coordinates at the pyramid level (tile resolution), not full-resolution image coordinates
+        int tileX = tileRequest.getTileX();
+        int tileY = tileRequest.getTileY();
         int tileWidth = tileRequest.getTileWidth();
         int tileHeight = tileRequest.getTileHeight();
 
