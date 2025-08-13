@@ -29,4 +29,6 @@ jobs:
       uses: gradle/actions/setup-gradle@v4
 
     - name: Execute build
-      run: ./gradlew build -P toolchain=21
+      shell: bash
+      run: |
+        ./gradlew clean build -P toolchain=21 --no-daemon --stacktrace

@@ -40,24 +40,49 @@ tasks.jar {
 val nativeBuildDir = layout.buildDirectory.dir("libisyntax-build").get().asFile
 val libisyntaxSrcDir = file("${project.rootDir}/third_party/libisyntax")
 
+// Auto-fetch libisyntax sources if missing
+val prepareLibisyntaxSources by tasks.registering(Exec::class) {
+    workingDir(project.rootDir)
+    isIgnoreExitValue = false
+    onlyIf { !libisyntaxSrcDir.exists() }
+    val cloneCmd = listOf("git", "clone", "--depth", "1", "https://github.com/amspath/libisyntax", libisyntaxSrcDir.absolutePath)
+    if (org.apache.tools.ant.taskdefs.condition.Os.isFamily(org.apache.tools.ant.taskdefs.condition.Os.FAMILY_WINDOWS)) {
+        commandLine(listOf("cmd", "/c") + cloneCmd)
+    } else {
+        commandLine(cloneCmd)
+    }
+}
+
 fun Exec.configureCMakeCommandsFor(os: String) {
     workingDir(nativeBuildDir)
     doFirst { nativeBuildDir.mkdirs() }
     val src = libisyntaxSrcDir.absolutePath
     val build = nativeBuildDir.absolutePath
     when (os) {
-        "linux", "mac" -> {
-            // Remove -march=native to avoid runtime issues; build shared lib
-            commandLine("bash", "-lc", "sed -i 's/-march=native//g' $src/CMakeLists.txt; cmake -S $src -B $build -DBUILD_TESTING=OFF -DBUILD_SHARED_LIBS=ON && cmake --build $build --target isyntax --config Release -j")
+        "linux" -> {
+            // Build shared lib; remove -march=native if present (portable sed; no-op if file missing)
+            commandLine(
+                "bash", "-lc",
+                "if [ -f \"$src/CMakeLists.txt\" ]; then sed -i 's/-march=native//g' \"$src/CMakeLists.txt\"; fi; " +
+                    "cmake -S $src -B $build -DBUILD_TESTING=OFF -DBUILD_SHARED_LIBS=ON && cmake --build $build --target isyntax --config Release -j"
+            )
         }
-        "windows" -> {
+        "mac" -> {
+            // BSD sed requires empty extension after -i
+            commandLine(
+                "bash", "-lc",
+                "if [ -f \"$src/CMakeLists.txt\" ]; then sed -i '' -e 's/-march=native//g' \"$src/CMakeLists.txt\"; fi; " +
+                    "cmake -S $src -B $build -DBUILD_TESTING=OFF -DBUILD_SHARED_LIBS=ON -DCMAKE_OSX_ARCHITECTURES=arm64 && cmake --build $build --target isyntax --config Release -j"
+            )
+        }
+        else -> { // windows
             commandLine("cmd", "/c", "cmake -S $src -B $build -DBUILD_TESTING=OFF -DBUILD_SHARED_LIBS=ON && cmake --build $build --target isyntax --config Release")
         }
     }
 }
 
 val buildLibisyntax by tasks.registering(Exec::class) {
-    onlyIf { libisyntaxSrcDir.exists() }
+    dependsOn(prepareLibisyntaxSources)
     val os = when {
         org.apache.tools.ant.taskdefs.condition.Os.isFamily(org.apache.tools.ant.taskdefs.condition.Os.FAMILY_WINDOWS) -> "windows"
         org.apache.tools.ant.taskdefs.condition.Os.isFamily(org.apache.tools.ant.taskdefs.condition.Os.FAMILY_MAC) -> "mac"
@@ -68,14 +93,11 @@ val buildLibisyntax by tasks.registering(Exec::class) {
 
 val packageNative by tasks.registering(Copy::class) {
     dependsOn(buildLibisyntax)
-    from({
-        val candidates = listOf(
-            file("${nativeBuildDir.absolutePath}/libisyntax.so"),
-            file("${nativeBuildDir.absolutePath}/libisyntax.dylib"),
-            file("${nativeBuildDir.absolutePath}/isyntax.dll")
-        )
-        candidates.filter { it.exists() }
-    })
+    from(
+        fileTree(nativeBuildDir) {
+            include("**/libisyntax.so", "**/libisyntax.dylib", "**/isyntax.dll")
+        }
+    )
     into("build/packaged-natives/natives/${platform.classifier}")
 }
 
