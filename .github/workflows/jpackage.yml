@@ -69,6 +69,11 @@ jobs:
         java-version: '21'
         distribution: 'temurin'
 
+    - name: Install CMake
+      uses: jwlawson/actions-setup-cmake@v2
+      with:
+        cmake-version: '3.26.4'
+
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v4
 
