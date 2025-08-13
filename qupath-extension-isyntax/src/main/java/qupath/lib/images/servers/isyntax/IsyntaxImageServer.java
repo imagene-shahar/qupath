@@ -87,13 +87,6 @@ public class IsyntaxImageServer extends AbstractTileableImageServer {
                 .pixelSizeMicrons(mppX, mppY)
                 .levels(levels)
                 .build();
-
-        // Test read small region to fail fast
-        try {
-            BufferedImage thumb = getDefaultThumbnail(0, 0);
-        } catch (IOException e) {
-            throw e;
-        }
     }
 
     @Override
@@ -115,14 +108,9 @@ public class IsyntaxImageServer extends AbstractTileableImageServer {
         int tileWidth = tileRequest.getTileWidth();
         int tileHeight = tileRequest.getTileHeight();
 
-        BufferedImage img = new BufferedImage(tileWidth, tileHeight, BufferedImage.TYPE_INT_ARGB_PRE);
-        int[] data = ((DataBufferInt) img.getRaster().getDataBuffer()).getData();
-        isyntax.readRegionBGRA(data, tileX, tileY, tileRequest.getLevel(), tileWidth, tileHeight);
-
         BufferedImage rgb = new BufferedImage(tileWidth, tileHeight, BufferedImage.TYPE_INT_RGB);
-        var g2d = rgb.createGraphics();
-        g2d.drawImage(img, 0, 0, tileWidth, tileHeight, null);
-        g2d.dispose();
+        int[] data = ((DataBufferInt) rgb.getRaster().getDataBuffer()).getData();
+        isyntax.readRegionIntoRGB(data, tileX, tileY, tileRequest.getLevel(), tileWidth, tileHeight);
         return rgb;
     }
 

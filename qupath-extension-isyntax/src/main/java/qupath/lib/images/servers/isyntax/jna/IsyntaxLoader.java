@@ -17,8 +17,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.nio.file.Files;
-import java.util.Arrays;
-import java.util.Locale;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class IsyntaxLoader {
@@ -74,27 +73,46 @@ public class IsyntaxLoader {
     }
 
     private static File extractPackagedNative() throws IOException {
-        String platform = detectPlatformClassifier();
-        String libName = platform.startsWith("windows") ? "isyntax.dll" : platform.startsWith("mac") ? "libisyntax.dylib" : "libisyntax.so";
-        String res = "/natives/" + platform + "/" + libName;
-        try (InputStream in = IsyntaxLoader.class.getResourceAsStream(res)) {
-            if (in == null) return null;
-            File tmp = Files.createTempFile("libisyntax", libName).toFile();
-            tmp.deleteOnExit();
-            try (OutputStream out = new FileOutputStream(tmp)) {
-                in.transferTo(out);
+        List<String> platforms = detectPlatformClassifiers();
+        for (String platform : platforms) {
+            String libName = platform.startsWith("windows") ? "isyntax.dll" : platform.startsWith("mac") ? "libisyntax.dylib" : "libisyntax.so";
+            String res = "/natives/" + platform + "/" + libName;
+            try (InputStream in = IsyntaxLoader.class.getResourceAsStream(res)) {
+                if (in == null) continue;
+                File tmp = Files.createTempFile("libisyntax", libName).toFile();
+                tmp.deleteOnExit();
+                try (OutputStream out = new FileOutputStream(tmp)) {
+                    in.transferTo(out);
+                }
+                return tmp;
             }
-            return tmp;
         }
+        return null;
     }
 
-    private static String detectPlatformClassifier() {
+    private static List<String> detectPlatformClassifiers() {
         String os = System.getProperty("os.name").toLowerCase(Locale.ROOT);
         String arch = System.getProperty("os.arch").toLowerCase(Locale.ROOT);
-        String a = arch.contains("aarch64") || arch.contains("arm64") ? "aarch64" : arch.contains("64") ? "x86-64" : arch;
-        if (os.contains("win")) return "windows-" + a;
-        if (os.contains("mac") || os.contains("darwin")) return "macos-" + a;
-        return "linux-" + a;
+        String normArch;
+        if (arch.contains("aarch64") || arch.contains("arm64")) normArch = "aarch64";
+        else if (arch.contains("64")) normArch = "x86_64";
+        else normArch = arch.replace('-', '_');
+        String base;
+        if (os.contains("win")) base = "windows-" + normArch;
+        else if (os.contains("mac") || os.contains("darwin")) base = "macos-" + normArch;
+        else base = "linux-" + normArch;
+        Set<String> variants = new LinkedHashSet<>();
+        variants.add(base);
+        variants.add(base.replace('_', '-'));
+        variants.add(base.replace('-', '_'));
+        variants.add(base.replace("linux-", "linux"));
+        variants.add(base.replace("windows-", "windows"));
+        variants.add(base.replace("macos-", "macos"));
+        return new ArrayList<>(variants);
+    }
+
+    public static String preferredClassifier() {
+        return detectPlatformClassifiers().get(0);
     }
 
     public static boolean isAvailable() { return INSTANCE != null; }

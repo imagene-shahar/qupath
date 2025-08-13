@@ -20,41 +20,68 @@ dependencies {
     implementation(libs.qupath.fxtras)
 }
 
-// Package platform-native libisyntax if available under build resources
 val platform = Utils.currentPlatform()
 
 sourceSets {
     main {
         resources {
-            // Expect native libraries to be copied into build/resources/main/natives/<platform.classifier>/
+            // Include packaged natives and resources into the jar (for runtime loading)
             srcDir("build/packaged-natives")
+            srcDir("src/main/resources")
+            include("**/*")
         }
     }
 }
 
-// Optional: build libisyntax for Linux using CMake if available
+tasks.jar {
+    dependsOn(tasks.processResources)
+}
+
 val nativeBuildDir = layout.buildDirectory.dir("libisyntax-build").get().asFile
 val libisyntaxSrcDir = file("${project.rootDir}/third_party/libisyntax")
 
-val buildLibisyntax by tasks.registering(Exec::class) {
-    onlyIf { libisyntaxSrcDir.exists() && org.apache.tools.ant.taskdefs.condition.Os.isFamily(org.apache.tools.ant.taskdefs.condition.Os.FAMILY_UNIX) }
+fun Exec.configureCMakeCommandsFor(os: String) {
     workingDir(nativeBuildDir)
     doFirst { nativeBuildDir.mkdirs() }
-    // Configure to build only the library; examples can fail due to pedantic warnings
-    commandLine("bash", "-lc", "cmake -S ${libisyntaxSrcDir.absolutePath} -B ${nativeBuildDir.absolutePath} -DBUILD_TESTING=OFF -DBUILD_SHARED_LIBS=ON && cmake --build ${nativeBuildDir.absolutePath} --target isyntax --config Release -j")
+    val src = libisyntaxSrcDir.absolutePath
+    val build = nativeBuildDir.absolutePath
+    when (os) {
+        "linux", "mac" -> {
+            // Remove -march=native to avoid runtime issues; build shared lib
+            commandLine("bash", "-lc", "sed -i 's/-march=native//g' $src/CMakeLists.txt; cmake -S $src -B $build -DBUILD_TESTING=OFF -DBUILD_SHARED_LIBS=ON && cmake --build $build --target isyntax --config Release -j")
+        }
+        "windows" -> {
+            commandLine("cmd", "/c", "cmake -S $src -B $build -DBUILD_TESTING=OFF -DBUILD_SHARED_LIBS=ON && cmake --build $build --target isyntax --config Release")
+        }
+    }
+}
+
+val buildLibisyntax by tasks.registering(Exec::class) {
+    onlyIf { libisyntaxSrcDir.exists() }
+    val os = when {
+        org.apache.tools.ant.taskdefs.condition.Os.isFamily(org.apache.tools.ant.taskdefs.condition.Os.FAMILY_WINDOWS) -> "windows"
+        org.apache.tools.ant.taskdefs.condition.Os.isFamily(org.apache.tools.ant.taskdefs.condition.Os.FAMILY_MAC) -> "mac"
+        else -> "linux"
+    }
+    configureCMakeCommandsFor(os)
 }
 
 val packageNative by tasks.registering(Copy::class) {
     dependsOn(buildLibisyntax)
     from({
-        val so = file("${nativeBuildDir.absolutePath}/libisyntax.so")
-        if (so.exists()) so else emptyList<File>()
+        val candidates = listOf(
+            file("${nativeBuildDir.absolutePath}/libisyntax.so"),
+            file("${nativeBuildDir.absolutePath}/libisyntax.dylib"),
+            file("${nativeBuildDir.absolutePath}/isyntax.dll")
+        )
+        candidates.filter { it.exists() }
     })
     into("build/packaged-natives/natives/${platform.classifier}")
 }
 
 tasks.processResources {
     dependsOn(packageNative)
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
 }
 
 // Ensure sourcesJar depends on native packaging but does not include the binaries
