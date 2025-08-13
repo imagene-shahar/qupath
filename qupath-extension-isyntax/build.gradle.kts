@@ -2,6 +2,7 @@ import io.github.qupath.gradle.Utils
 import java.net.URL
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.io.File
 
 plugins {
   id("qupath.common-conventions")
@@ -47,7 +48,7 @@ val libisyntaxSrcDir = file("${project.rootDir}/third_party/libisyntax")
 val prepareLibisyntaxSources by tasks.registering {
     outputs.dir(libisyntaxSrcDir)
     doLast {
-        if (libisyntaxSrcDir.exists()) return@doLast
+        if (File(libisyntaxSrcDir, "CMakeLists.txt").exists()) return@doLast
         libisyntaxSrcDir.parentFile.mkdirs()
         // Try git clone first
         try {
@@ -72,7 +73,11 @@ val prepareLibisyntaxSources by tasks.registering {
                     }
                     // Move extracted folder (libisyntax-<branch>) to third_party/libisyntax
                     val extracted = extractDir.listFiles()?.firstOrNull { it.isDirectory } ?: throw RuntimeException("libisyntax archive extraction failed")
-                    extracted.copyRecursively(target = libisyntaxSrcDir, overwrite = true)
+                    libisyntaxSrcDir.mkdirs()
+                    extracted.listFiles()?.forEach { child ->
+                        val dest = libisyntaxSrcDir.resolve(child.name)
+                        child.copyRecursively(target = dest, overwrite = true)
+                    }
                     true
                 } catch (ex: Exception) {
                     logger.warn("Download/extract for branch ${branch} failed: ${ex.message}")
@@ -81,8 +86,12 @@ val prepareLibisyntaxSources by tasks.registering {
                     runCatching { tmpZip.delete() }
                 }
             }
+            // Try known default branches
             if (!tryDownload("main") && !tryDownload("master")) {
-                throw RuntimeException("Unable to fetch libisyntax sources via git or zip")
+                // Fallback to a fixed tag to avoid branch name changes breaking CI
+                if (!tryDownload("v0.3.0")) {
+                    throw RuntimeException("Unable to fetch libisyntax sources via git or zip on main/master/v0.3.0")
+                }
             }
         }
     }
