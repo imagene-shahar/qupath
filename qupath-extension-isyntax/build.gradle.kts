@@ -25,6 +25,12 @@ dependencies {
 }
 
 val platform = Utils.currentPlatform()
+val nativesClassifier = when (platform.classifier) {
+    "darwin-x86_64" -> "macos-x86_64"
+    "darwin-aarch64" -> "macos-aarch64"
+    "win32-x86_64" -> "windows-x86_64"
+    else -> platform.classifier
+}
 
 sourceSets {
     main {
@@ -144,7 +150,7 @@ val packageNative by tasks.registering(Copy::class) {
             include("**/libisyntax.so", "**/libisyntax.dylib", "**/isyntax.dll")
         }
     )
-    into("build/packaged-natives/natives/${platform.classifier}")
+    into("build/packaged-natives/natives/${nativesClassifier}")
 }
 
 tasks.processResources {
