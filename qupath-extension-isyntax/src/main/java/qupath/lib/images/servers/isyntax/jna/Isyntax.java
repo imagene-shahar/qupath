@@ -88,6 +88,20 @@ public class Isyntax implements Closeable {
         }
     }
 
+    public void readRegionIntoRGB(int[] dest, long x, long y, int level, int w, int h) throws IOException {
+        int n = w * h;
+        int[] tmp = new int[n];
+        int err = jna.libisyntax_read_region(isyntax, cache, level, x, y, w, h, tmp, LIBISYNTAX_PIXEL_FORMAT_BGRA);
+        if (err != 0) throw new IOException("libisyntax_read_region failed: " + err);
+        for (int i = 0; i < n; i++) {
+            int c = tmp[i];
+            int b = c & 0xFF;
+            int g = (c >>> 8) & 0xFF;
+            int r = (c >>> 16) & 0xFF;
+            dest[i] = (r << 16) | (g << 8) | b;
+        }
+    }
+
     public BufferedImage readRegionImage(long x, long y, int level, int w, int h) throws IOException {
         BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB_PRE);
         int[] data = ((DataBufferInt) img.getRaster().getDataBuffer()).getData();
