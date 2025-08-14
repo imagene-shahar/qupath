@@ -130,8 +130,8 @@ fun Exec.configureCMakeCommandsFor(os: String) {
         else -> { // windows
             commandLine(
                 "cmd", "/c",
-                // Ensure 64-bit build and statically link MSVC runtime to avoid missing dependency issues on target machines
-                "cmake -S $src -B $build -DBUILD_TESTING=OFF -DBUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release -A x64 -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded && " +
+                // Ensure 64-bit build, export all symbols, and statically link MSVC runtime to avoid missing dependency issues on target machines
+                "cmake -S $src -B $build -DBUILD_TESTING=OFF -DBUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release -A x64 -DCMAKE_WINDOWS_EXPORT_ALL_SYMBOLS=ON -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded && " +
                     "cmake --build $build --target isyntax --config Release"
             )
         }
