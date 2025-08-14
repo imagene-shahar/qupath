@@ -11,6 +11,7 @@ package qupath.lib.images.servers.isyntax.jna;
 
 import com.sun.jna.Native;
 import com.sun.jna.NativeLibrary;
+// Avoid hard dependency on platform-specific JNA modules; detect Windows via system property
 import com.sun.jna.ptr.PointerByReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,17 +52,28 @@ public class IsyntaxLoader {
                 String dir = libFile.getParentFile().getAbsolutePath();
                 try { NativeLibrary.addSearchPath("isyntax", dir); } catch (Throwable ignored) {}
                 try { NativeLibrary.addSearchPath("libisyntax", dir); } catch (Throwable ignored) {}
-                // On Windows, add to PATH for transitive dependencies
+                // On Windows, hint the loader to search this directory for transitive dependencies
                 if (System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win")) {
-                    String path = System.getenv("PATH");
-                    if (path != null && !path.contains(dir)) {
-                        try {
-                            System.setProperty("jna.tmpdir", dir);
-                        } catch (Throwable ignored) {}
-                    }
+                    try {
+                        // Use a reflective call to Kernel32.SetDllDirectory if available without requiring the platform jar
+                        Class<?> kernel = Class.forName("com.sun.jna.platform.win32.Kernel32");
+                        Object inst = kernel.getField("INSTANCE").get(null);
+                        kernel.getMethod("SetDllDirectory", String.class).invoke(inst, dir);
+                    } catch (Throwable ignored) {}
                 }
             }
-            return Native.load(libFile.getAbsolutePath(), IsyntaxJNA.class);
+            // First, try direct absolute path
+            try {
+                return Native.load(libFile.getAbsolutePath(), IsyntaxJNA.class);
+            } catch (UnsatisfiedLinkError e) {
+                // Fallback: force-load via JVM, then bind by base name
+                System.load(libFile.getAbsolutePath());
+                try {
+                    return Native.load("isyntax", IsyntaxJNA.class);
+                } catch (UnsatisfiedLinkError e2) {
+                    return Native.load("libisyntax", IsyntaxJNA.class);
+                }
+            }
         } catch (Throwable t) {
             logger.debug("Failed loading libisyntax from {}", libFile, t);
             return null;

@@ -7,6 +7,7 @@
 
 import io.github.qupath.gradle.PlatformPlugin
 import io.github.qupath.gradle.Utils
+import java.util.jar.JarFile
 import org.gradle.crypto.checksum.Checksum
 
 plugins {
@@ -290,15 +291,44 @@ val jpackageFinalize by tasks.registering {
                 delete(appFile)
             }
         }
-        // On windows, for the installer we should also zip up the image
+        // On windows, for the installer we should also zip up the image and extract native DLLs next to the exe
         if (Utils.currentPlatform().isWindows) {
             val imageDir = File(outputDir, qupathAppName)
-            if (imageDir.isDirectory() && packageType == "installer") {
-                println("Zipping $imageDir")
-                // See https://docs.gradle.org/current/userguide/ant.html
-                ant.withGroovyBuilder {
-                    "zip"("destfile" to "${imageDir.getCanonicalPath()}.zip") {
-                        "fileset"("dir" to imageDir.getCanonicalPath()) {
+            if (imageDir.isDirectory()) {
+                // 1) Ensure the native lib is available in a directory searched by the loader (next to exe)
+                try {
+                    val appLibDir = File(imageDir, "app/lib")
+                    val binDir = File(imageDir, "bin")
+                    binDir.mkdirs()
+                    if (appLibDir.isDirectory) {
+                        val jars = appLibDir.listFiles { f -> f.isFile && f.name.startsWith("qupath-extension-isyntax-") && f.name.endsWith(".jar") }?.toList() ?: emptyList()
+                        for (jar in jars) {
+                            JarFile(jar).use { jf ->
+                                val entries = jf.entries()
+                                while (entries.hasMoreElements()) {
+                                    val e = entries.nextElement()
+                                    val name = e.name
+                                    if (!e.isDirectory && name.contains("natives/windows") && (name.endsWith("/isyntax.dll") || name.endsWith("/libisyntax.dll"))) {
+                                        val out = File(binDir, name.substringAfterLast('/'))
+                                        jf.getInputStream(e).use { input -> out.outputStream().use { input.copyTo(it) } }
+                                        println("Extracted ${out.name} to ${binDir}")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (ex: Exception) {
+                    logger.warn("Failed to extract isyntax.dll into app image: ${ex.message}")
+                }
+
+                // 2) Zip the image along with extracted natives if building installer
+                if (packageType == "installer") {
+                    println("Zipping $imageDir")
+                    // See https://docs.gradle.org/current/userguide/ant.html
+                    ant.withGroovyBuilder {
+                        "zip"("destfile" to "${imageDir.getCanonicalPath()}.zip") {
+                            "fileset"("dir" to imageDir.getCanonicalPath()) {
+                            }
                         }
                     }
                 }

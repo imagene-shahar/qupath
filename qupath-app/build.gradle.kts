@@ -25,6 +25,9 @@ dependencies {
     implementation(libs.qupath.djl)
 
     implementation(libs.extensionmanager)
+
+    // Ensure iSyntax extension & its packaged natives are included in the distribution
+    runtimeOnly(project(":qupath-extension-isyntax"))
 }
 
 /**
