@@ -123,6 +123,13 @@ tasks.register<Javadoc>("mergedJavadocs") {
     isFailOnError = false
 }
 
+// Ensure external Javadoc outages do not fail the build
+allprojects {
+	tasks.withType<Javadoc>().configureEach {
+		isFailOnError = false
+	}
+}
+
 
 /**
  * Export icons and a command list based on menu items (useful for documentation).
