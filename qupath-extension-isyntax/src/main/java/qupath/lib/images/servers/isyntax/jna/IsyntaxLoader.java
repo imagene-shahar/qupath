@@ -11,7 +11,7 @@ package qupath.lib.images.servers.isyntax.jna;
 
 import com.sun.jna.Native;
 import com.sun.jna.NativeLibrary;
-import com.sun.jna.win32.W32APIOptions;
+import com.sun.jna.Library;
 // Avoid hard dependency on platform-specific JNA modules; detect Windows via system property
 import com.sun.jna.ptr.PointerByReference;
 import org.slf4j.Logger;
@@ -47,11 +47,8 @@ public class IsyntaxLoader {
     }
 
     private static Map<String, Object> jnaOptions() {
-        // Ensure UTF-8 encoding for char* arguments/returns across platforms, critical on Windows
         Map<String, Object> opts = new HashMap<>();
-        opts.put("w32.ascii", false);
-        opts.put("w32.wchar_t", true);
-        opts.put("string-encoding", "UTF-8");
+        opts.put(Library.OPTION_STRING_ENCODING, "UTF-8");
         return opts;
     }
 
