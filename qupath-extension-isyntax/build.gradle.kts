@@ -58,10 +58,11 @@ val prepareLibisyntaxSources by tasks.registering {
         libisyntaxSrcDir.parentFile.mkdirs()
         // Try git clone first
         try {
-            project.exec {
-                workingDir(project.rootDir)
-                commandLine("git", "clone", "--depth", "1", "https://github.com/imagene-shahar/libisyntax", libisyntaxSrcDir.absolutePath)
-            }
+            val pb = ProcessBuilder("git", "clone", "--depth", "1", "https://github.com/imagene-shahar/libisyntax", libisyntaxSrcDir.absolutePath)
+            pb.directory(project.rootDir)
+            val proc = pb.start()
+            val exit = proc.waitFor()
+            if (exit != 0) throw RuntimeException("git clone exit code $exit")
         } catch (e: Exception) {
             logger.warn("git clone libisyntax failed, falling back to zip download: ${e.message}")
             val tmpZip = layout.buildDirectory.file("libisyntax.zip").get().asFile

@@ -11,6 +11,7 @@ package qupath.lib.images.servers.isyntax.jna;
 
 import com.sun.jna.Native;
 import com.sun.jna.NativeLibrary;
+import com.sun.jna.win32.W32APIOptions;
 // Avoid hard dependency on platform-specific JNA modules; detect Windows via system property
 import com.sun.jna.ptr.PointerByReference;
 import org.slf4j.Logger;
@@ -45,6 +46,15 @@ public class IsyntaxLoader {
         return INSTANCE != null;
     }
 
+    private static Map<String, Object> jnaOptions() {
+        // Ensure UTF-8 encoding for char* arguments/returns across platforms, critical on Windows
+        Map<String, Object> opts = new HashMap<>();
+        opts.put("w32.ascii", false);
+        opts.put("w32.wchar_t", true);
+        opts.put("string-encoding", "UTF-8");
+        return opts;
+    }
+
     private static IsyntaxJNA loadFromFilePath(File libFile) {
         try {
             // Ensure parent dir is on search path for dependent DLLs
@@ -64,14 +74,14 @@ public class IsyntaxLoader {
             }
             // First, try direct absolute path
             try {
-                return Native.load(libFile.getAbsolutePath(), IsyntaxJNA.class);
+                return Native.load(libFile.getAbsolutePath(), IsyntaxJNA.class, jnaOptions());
             } catch (UnsatisfiedLinkError e) {
                 // Fallback: force-load via JVM, then bind by base name
                 System.load(libFile.getAbsolutePath());
                 try {
-                    return Native.load("isyntax", IsyntaxJNA.class);
+                    return Native.load("isyntax", IsyntaxJNA.class, jnaOptions());
                 } catch (UnsatisfiedLinkError e2) {
-                    return Native.load("libisyntax", IsyntaxJNA.class);
+                    return Native.load("libisyntax", IsyntaxJNA.class, jnaOptions());
                 }
             }
         } catch (Throwable t) {
@@ -120,10 +130,10 @@ public class IsyntaxLoader {
                 }
             }
             try {
-                return Native.load("isyntax", IsyntaxJNA.class);
+                return Native.load("isyntax", IsyntaxJNA.class, jnaOptions());
             } catch (UnsatisfiedLinkError e1) {
                 logger.debug("Native.load('isyntax') failed; trying 'libisyntax'", e1);
-                return Native.load("libisyntax", IsyntaxJNA.class);
+                return Native.load("libisyntax", IsyntaxJNA.class, jnaOptions());
             }
         } finally {
             if (jnaPath == null) System.clearProperty("jna.library.path");
