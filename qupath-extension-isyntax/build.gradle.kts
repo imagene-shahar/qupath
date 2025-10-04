@@ -60,6 +60,7 @@ val prepareLibisyntaxSources by tasks.registering {
         try {
             val pb = ProcessBuilder("git", "clone", "--depth", "1", "https://github.com/imagene-shahar/libisyntax", libisyntaxSrcDir.absolutePath)
             pb.directory(project.rootDir)
+            pb.inheritIO()
             val proc = pb.start()
             val exit = proc.waitFor()
             if (exit != 0) throw RuntimeException("git clone exit code $exit")
